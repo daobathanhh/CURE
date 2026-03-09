@@ -14,6 +14,17 @@ tests/comparison/test_data/
 tests/comparison/plots/
 tests/cpp_vs_true/test_data/
 tests/cpp_vs_true/plots/
+plots*/
+
+scripts
+tests
+examples
+python_code
+
+*.csv
+*.parquet
+*.json
+*.pdf
 
 # IDE / editor
 .idea/

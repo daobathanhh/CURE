@@ -735,13 +735,28 @@ ScalableCURE& ScalableCURE::fit(const Matrix& data) {
         std::cout << "  Step 4: Merged to " << all_clusters.size() << " clusters\n";
     }
     
-    // Step 5: Eliminate outliers
+    // Step 5: Eliminate outlier clusters (small ones), but always keep at least k_ clusters
     clusters_.clear();
+    std::vector<Cluster> kept, discarded;
     for (auto& c : all_clusters) {
         if (static_cast<int>(c.points_idx.size()) > outlier_threshold_) {
-            clusters_.push_back(std::move(c));
+            kept.push_back(std::move(c));
+        } else {
+            discarded.push_back(std::move(c));
         }
     }
+    // If we dropped too many and have fewer than k_ clusters, keep largest of the discarded
+    if (static_cast<int>(kept.size()) < k_ && !discarded.empty()) {
+        std::sort(discarded.begin(), discarded.end(),
+            [](const Cluster& a, const Cluster& b) {
+                return a.points_idx.size() > b.points_idx.size();
+            });
+        size_t need = static_cast<size_t>(k_) - kept.size();
+        for (size_t i = 0; i < need && i < discarded.size(); ++i) {
+            kept.push_back(std::move(discarded[i]));
+        }
+    }
+    clusters_ = std::move(kept);
     
     if (verbose_) {
         std::cout << "  Step 5: After outlier removal: " << clusters_.size() << " clusters\n";
@@ -782,9 +797,12 @@ size_t ScalableCURE::computeSampleSize() const {
         return s;
     }
     if (sample_size_ <= 1.0) {
-        return std::max(static_cast<size_t>(k_ * 10),
-                       std::max(static_cast<size_t>(sample_size_min_),
-                               static_cast<size_t>(n_ * sample_size_)));
+        size_t s = std::max(static_cast<size_t>(k_ * 10),
+                            std::max(static_cast<size_t>(sample_size_min_),
+                                     static_cast<size_t>(n_ * sample_size_)));
+        s = std::min(s, static_cast<size_t>(sample_size_max_));
+        s = std::min(s, n_);
+        return s;
     }
     return std::min(std::max(static_cast<size_t>(sample_size_), static_cast<size_t>(sample_size_min_)), n_);
 }

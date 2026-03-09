@@ -49,7 +49,7 @@ struct ScalableCureConfig : public CureConfig {
     double sample_size_exponent = 0.33;   // n^0.33: sublinear growth
     double sample_size_multiplier = 50.0;  // C in C * n^exponent
     int sample_size_min = 500;             // Don't under-sample (e.g. not 100 for 100k)
-    int sample_size_max = 100000;          // Cap so merge phase stays tractable
+    int sample_size_max = 15000;           // Cap so Step 4 (base CURE on reps) stays tractable for large n
     /** If true: sample = points nearest to global centroid (outlier-resistant); else random. */
     bool use_centroid_sampling = false;
     
