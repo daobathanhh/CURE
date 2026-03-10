@@ -110,18 +110,24 @@ CURE& CURE::fit(const Matrix& data) {
         std::cout << "  Finding initial nearest neighbors...\n";
     }
     
-    for (auto& [id, cluster] : clusters) {
-        auto [closest_id, dist] = findClosestBruteForce(cluster, clusters);
+    for (auto& kv : clusters) {
+        Cluster& cluster = kv.second;
+        int closest_id;
+        double dist;
+        std::tie(closest_id, dist) = findClosestBruteForce(cluster, clusters);
         cluster.closest = closest_id;
         cluster.dist = dist;
     }
     
     // Build KD-tree from representative points
-    auto [kdtree, rep_map] = buildKDTree(clusters);
+    KDTree kdtree;
+    std::vector<int> rep_map;
+    std::tie(kdtree, rep_map) = buildKDTree(clusters);
     
     // Build min-heap ordered by distance to closest
     std::priority_queue<HeapEntry, std::vector<HeapEntry>, std::greater<HeapEntry>> Q;
-    for (const auto& [id, cluster] : clusters) {
+    for (const auto& kv : clusters) {
+        const Cluster& cluster = kv.second;
         if (cluster.closest != -1) {
             Q.emplace(cluster.dist, cluster.id);
         }
@@ -160,7 +166,9 @@ CURE& CURE::fit(const Matrix& data) {
         
         if (v_it == clusters.end() || !v_it->second.alive) {
             // Recompute closest and re-insert
-            auto [new_closest, new_dist] = findClosestKDTree(u, kdtree, rep_map);
+            int new_closest;
+            double new_dist;
+            std::tie(new_closest, new_dist) = findClosestKDTree(u, kdtree, rep_map);
             if (new_closest == -1) {
                 std::tie(new_closest, new_dist) = findClosestBruteForce(u, clusters);
             }
@@ -193,7 +201,9 @@ CURE& CURE::fit(const Matrix& data) {
         w_ref.closest = -1;
         
         // Update closest for all clusters
-        for (auto& [x_id, x] : clusters) {
+        for (auto& kv : clusters) {
+            int x_id = kv.first;
+            Cluster& x = kv.second;
             if (x_id == w_ref.id || !x.alive) {
                 continue;
             }
@@ -212,7 +222,9 @@ CURE& CURE::fit(const Matrix& data) {
                 double dist_x_w = cluster_distance(x, w_ref, metric_);
                 
                 // Find new closest using KD-tree
-                auto [z_id, dist_x_z] = findClosestKDTree(x, kdtree, rep_map, dist_x_w);
+                int z_id;
+                double dist_x_z;
+                std::tie(z_id, dist_x_z) = findClosestKDTree(x, kdtree, rep_map, dist_x_w);
                 
                 if (z_id != -1 && dist_x_z < dist_x_w) {
                     x.closest = z_id;
@@ -259,8 +271,8 @@ CURE& CURE::fit(const Matrix& data) {
     
     // Store final clusters
     clusters_.clear();
-    for (auto& [id, cluster] : clusters) {
-        clusters_.push_back(std::move(cluster));
+    for (auto& kv : clusters) {
+        clusters_.push_back(std::move(kv.second));
     }
     
     // Assign labels: if we sampled, CURE was run on sample only — now assign WHOLE dataset.
@@ -352,7 +364,9 @@ std::pair<KDTree, std::vector<int>> CURE::buildKDTree(
     Matrix rep_points;
     std::vector<int> rep_map;  // index -> cluster_id
     
-    for (const auto& [id, cluster] : clusters) {
+    for (const auto& kv : clusters) {
+        int id = kv.first;
+        const Cluster& cluster = kv.second;
         if (!cluster.alive) continue;
         for (const auto& rep : cluster.reps) {
             rep_map.push_back(id);
@@ -411,7 +425,9 @@ std::pair<int, double> CURE::findClosestBruteForce(
     double min_dist = INF;
     int closest_id = -1;
     
-    for (const auto& [id, cluster] : clusters) {
+    for (const auto& kv : clusters) {
+        int id = kv.first;
+        const Cluster& cluster = kv.second;
         if (id == query.id || !cluster.alive) {
             continue;
         }
@@ -654,11 +670,12 @@ ScalableCURE& ScalableCURE::fit(const Matrix& data) {
     
     std::vector<Cluster> all_clusters;
     for (int i = 0; i < n_partitions_; ++i) {
-        const auto& [part_data, part_indices] = partitions[i];
+        const Matrix& part_data = partitions[i].first;
+        const IndexList& part_indices = partitions[i].second;
         if (part_data.empty()) continue;
         
         int target = std::min(target_per_partition, static_cast<int>(part_data.size()));
-        auto partial = partialCluster(part_data, part_indices, target);
+        std::vector<Cluster> partial = partialCluster(part_data, part_indices, target);
         
         // Remove small clusters (outliers)
         for (auto& c : partial) {

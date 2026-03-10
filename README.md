@@ -50,11 +50,34 @@ Or run executables directly:
 
 `test_comparison` is run by CTest with no arguments; it looks for `tests/comparison/test_data` and **skips** if missing (exit 0), so CTest always passes even without comparison data.
 
-### 4. CLI usage
+### 4. Distributed K-means (optional, for comparison)
+
+Để so sánh kết quả với **distributed K-means** (MapReduce, cùng định dạng CSV), bật build và chạy:
+
+```bash
+cmake -DCURE_BUILD_DISTRIBUTED_KMEANS=ON ..
+cmake --build .
+# Binary: build/distributed_kmeans/kmeans_initial_centers, kmeans_mapper, kmeans_reducer, kmeans_labeler
+```
+
+Cách dùng và so sánh với CURE: xem **distributed_kmeans/README.md**. Code CURE không bị thay đổi.
+
+### 5. MapReduce CURE (data on HDFS)
+
+Khi data nằm trên HDFS, dùng **map phase** (partial CURE từng split) và **reduce phase** (merge thành k cluster):
+
+- **Mapper**: `./build/examples/cure_mapper <target_clusters> [c] [alpha]` — đọc điểm từ stdin (CSV, mỗi dòng một điểm), emit partial clusters.
+- **Reducer**: `./build/examples/cure_reducer <k> [c] [alpha]` — đọc partial clusters từ stdin, in ra k cluster cuối.
+
+Chi tiết I/O, Hadoop Streaming và API: xem **docs/MAPREDUCE_CURE.md**.
+
+### 6. CLI usage
 
 | Command | Usage |
 |--------|--------|
 | **Examples** | No arguments. `./build/examples/cure_example`, `./build/examples/kdtree_example`, `./build/examples/cure_benchmark` |
+| **cure_mapper** | `./build/examples/cure_mapper <target_clusters> [c] [alpha]` — MapReduce map (stdin CSV → partial clusters). |
+| **cure_reducer** | `./build/examples/cure_reducer <k> [c] [alpha]` — MapReduce reduce (partial clusters → k clusters). |
 | **test_comparison** | `./build/tests/test_comparison [test_data_dir]` — default: `tests/comparison/test_data`. Use e.g. `tests/comparison/test_data/euclidean` to run one variant. |
 | **test_cpp_vs_true** | `./build/tests/test_cpp_vs_true [test_data_dir]` — default: `tests/cpp_vs_true/test_data`. C++ vs true labels only (Euclidean + Pearson). Writes `cpp_results_euclidean.json` and `cpp_results_pearson.json` per case for plotting. |
 | **plot_cpp_vs_true.py** | `python3 tests/cpp_vs_true/plot_cpp_vs_true.py [--test_data DIR] [--out DIR] [--show]` — plots True \| C++ Euclidean \| C++ Pearson (same case names as comparison). |
@@ -66,7 +89,7 @@ Or run executables directly:
 
 Run from **project root** unless noted.
 
-### 5. Python vs C++ comparison (optional)
+### 7. Python vs C++ comparison (optional)
 
 To compare Python and C++ CURE and generate plots for all four variants (Euclidean, Pearson, Scalable Euclidean, Scalable Pearson):
 
@@ -121,7 +144,7 @@ This script (from project root):
 
 See `tests/comparison/README.md` for variant layout, plot options, and interpretation.
 
-### 6. Clean
+### 8. Clean
 
 ```bash
 ./scripts/clean.sh       # Remove build/, python_code __pycache__

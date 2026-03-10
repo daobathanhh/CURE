@@ -70,8 +70,9 @@ double pearson_distance(const Point& p, const Point& q) {
     // Pearson correlation
     double correlation = dot / (norm_p * norm_q);
     
-    // Clamp for numerical stability
-    correlation = std::clamp(correlation, -1.0, 1.0);
+    // Clamp for numerical stability (avoid std::clamp for GCC 6 / C++14)
+    if (correlation > 1.0) correlation = 1.0;
+    else if (correlation < -1.0) correlation = -1.0;
     
     return 1.0 - correlation;
 }

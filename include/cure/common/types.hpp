@@ -18,6 +18,14 @@ constexpr double INF = std::numeric_limits<double>::infinity();
 constexpr double EPS = 1e-10;
 
 /**
+ * @brief Distance metric types (used by CURE and MapReduce CURE)
+ */
+enum class DistanceMetric {
+    Euclidean,
+    Pearson
+};
+
+/**
  * @brief Configuration for CURE algorithm
  */
 struct CureConfig {
@@ -25,6 +33,8 @@ struct CureConfig {
     int c = 5;              // Number of representative points per cluster
     double alpha = 0.3;     // Shrink factor (0.1 to 0.9 only)
     bool verbose = false;   // Print progress
+    /** Distance metric for all CURE and merge steps (Euclidean or Pearson). */
+    DistanceMetric metric = DistanceMetric::Euclidean;
     /** Outlier-resistant sampling: fraction of points closest to global centroid
      *  used for merge phase (0 = disabled). E.g. 0.5 = 1/2, 0.2 = 1/5. Then all
      *  points are assigned to nearest cluster. */
@@ -56,14 +66,6 @@ struct ScalableCureConfig : public CureConfig {
     ScalableCureConfig() = default;
     ScalableCureConfig(int k_, int c_, double alpha_)
         : CureConfig(k_, c_, alpha_) {}
-};
-
-/**
- * @brief Distance metric types
- */
-enum class DistanceMetric {
-    Euclidean,
-    Pearson
 };
 
 } // namespace cure

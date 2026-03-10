@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.14)
+# 3.7+ for build-in-container (Debian Stretch has 3.7.2); 3.14+ preferred on host
+cmake_minimum_required(VERSION 3.7)
 
 project(cure_cpp
     VERSION 1.0.0
-    DESCRIPTION "CURE Clustering Algorithm C++ Implementation"
     LANGUAGES CXX
 )
 
@@ -11,11 +11,17 @@ option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(CURE_BUILD_EXAMPLES "Build examples" ON)
 option(CURE_BUILD_TESTS "Build tests" ON)
 option(CURE_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option(CURE_BUILD_DISTRIBUTED_KMEANS "Build distributed K-means (for comparison with CURE)" OFF)
 
 # Standard C++ settings
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+# CMake 3.7 does not know CXX17; avoid setting STANDARD 17 so no target "requires" it, and pass -std=c++17 by hand
+if(CMAKE_VERSION VERSION_LESS "3.8")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+else()
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
 
 # Optimization flags
 if(NOT CMAKE_BUILD_TYPE)
@@ -44,16 +50,13 @@ if(CURE_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-# Installation
-include(GNUInstallDirs)
+# Distributed K-means (standalone; for comparison with CURE, does not touch cure_cpp)
+if(CURE_BUILD_DISTRIBUTED_KMEANS)
+    add_subdirectory(distributed_kmeans)
+endif()
 
-install(TARGETS cure_cpp
-    EXPORT cure_cpp_targets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+# Installation (install TARGETS must be in same dir as target for CMake 3.7; see src/CMakeLists.txt)
+include(GNUInstallDirs)
 
 install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}

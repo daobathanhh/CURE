@@ -6,6 +6,7 @@ set(CURE_SOURCES
     cure/kd_tree.cpp
     cure/cluster.cpp
     cure/cure.cpp
+    cure/cure_mapreduce.cpp
 )
 
 # Create the library
@@ -18,8 +19,10 @@ target_include_directories(cure_cpp
         $<INSTALL_INTERFACE:include>
 )
 
-# Set compile features
-target_compile_features(cure_cpp PUBLIC cxx_std_17)
+# C++17: use global CMAKE_CXX_STANDARD from root (cxx_std_17 needs CMake 3.8+)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.8")
+    target_compile_features(cure_cpp PUBLIC cxx_std_17)
+endif()
 
 # Export symbols for shared library (default visibility for simplicity)
 set_target_properties(cure_cpp PROPERTIES
@@ -28,3 +31,13 @@ set_target_properties(cure_cpp PROPERTIES
 
 # Add alias for modern CMake usage
 add_library(cure::cure ALIAS cure_cpp)
+
+# Install in same directory as target (CMake 3.7: install TARGETS only sees targets defined here)
+include(GNUInstallDirs)
+install(TARGETS cure_cpp
+    EXPORT cure_cpp_targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
