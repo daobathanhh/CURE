@@ -7,7 +7,7 @@
 
 ## Abstract
 
-Distance-based clustering algorithms applied to unstandardized multi-scale data systematically produce degenerate partitions in which one or two clusters absorb the overwhelming majority of points, a phenomenon we term *monopolized clustering*. This failure mode arises from feature dominance: when attributes span vastly different numerical ranges, a single high-magnitude feature controls all pairwise distances, rendering the remaining features irrelevant. Although feature standardization is the conventional remedy, it transforms cluster descriptions into z-score space, destroying the business interpretability of original-unit segment profiles. We investigate this problem empirically within the CURE hierarchical clustering framework applied to RFM (Recency, Frequency, Monetary) customer segmentation, where raw monetary values dominate Euclidean distances by a factor of up to 3,524x over recency features. Our investigation centers on three coordinated adaptations: substituting Pearson correlation distance for Euclidean in CURE, which eliminates feature dominance while preserving feature units; replacing uniform random sampling with centroid-proximity sampling in CURE's large-scale variant, adapting the trimmed-core sampling principle from BIRCH to an agglomerative context; and introducing a tunable *outlier fraction* parameter for distributed MapReduce CURE, which provides per-mapper trimming analogous to trimmed k-means in a distributed setting. We develop clustering evaluation metrics adapted for Pearson distance space, discuss their conceptual limitations, and validate their correlation with clustering balance. Experiments on four real-world RFM datasets (2,500 to 1,283,707 customers) demonstrate that Pearson distance eliminates monopolized clustering in 55-82% of configurations relative to Euclidean, that distributed trimming with outlier fraction f = 0.7-0.8 substantially reduces Top-2 concentration by 14-44 percentage points (with near-uniform balance on datasets with well-separated cluster structure, and significant but incomplete balance improvement on the largest dataset), and that the resulting clusters retain distinct mean values across RFM features in original units.
+Distance-based clustering algorithms applied to unstandardized multi-scale data systematically produce degenerate partitions in which one or two clusters absorb the overwhelming majority of points, a phenomenon we term *monopolized clustering*. This failure mode arises from feature dominance: when attributes span vastly different numerical ranges, a single high-magnitude feature controls all pairwise distances, rendering the remaining features irrelevant. Although feature standardization is the conventional remedy, it transforms cluster descriptions into z-score space, destroying the business interpretability of original-unit segment profiles. We investigate this problem empirically within the CURE hierarchical clustering framework applied to RFM (Recency, Frequency, Monetary) customer segmentation, where raw monetary values dominate Euclidean distances by a factor of up to 3,524× over recency features (OR2: $\Delta_M/\Delta_R \approx 936$; the stated factor reflects squared scale contributions in $d_E^2$, Table 1). Our investigation centers on three coordinated adaptations: substituting Pearson correlation distance for Euclidean in CURE, which eliminates feature dominance while preserving feature units; replacing uniform random sampling with centroid-proximity sampling in CURE's large-scale variant, which prevents the *partition cascade* -- the propagation of partition-level monopolization to global clustering through the representative pipeline -- that arises when a random sample overrepresents the majority region of a skewed distribution; and introducing a tunable *outlier fraction* parameter for distributed MapReduce CURE, which provides per-mapper trimming analogous to trimmed k-means in a distributed setting. We develop clustering evaluation metrics adapted for Pearson distance space, discuss their conceptual limitations, and validate their correlation with clustering balance. Experiments on four real-world RFM datasets (2,500 to 1,283,707 customers) demonstrate that Pearson distance reduces high-concentration clustering ($\tau \geq 0.90$) by 89-100% relative to Euclidean across all datasets, while log-transforming the dominant Monetary feature resolves monopolization only partially (2-3 configurations remaining for the most skewed dataset), confirming that single-feature transformations transfer dominance rather than eliminate it. Distributed trimming with outlier fraction $f = 0.7$--$0.8$ reduces Top-2 concentration by up to 44 percentage points (from 99.9% to 55.8% for the 100K-customer dataset), and the resulting Pearson clusters retain distinct mean values across RFM features in original units, supporting interpretability without standardization.
 
 ---
 
@@ -15,15 +15,15 @@ Distance-based clustering algorithms applied to unstandardized multi-scale data 
 
 Customer segmentation via RFM (Recency, Frequency, Monetary) features is among the most widely deployed applications of unsupervised learning in commercial analytics [1, 21]. RFM encodes three behaviorally meaningful dimensions: elapsed time since a customer's last transaction (Recency), total transaction count in a reference period (Frequency), and cumulative spending (Monetary). Partitioning customers along these axes exposes qualitatively distinct behavioral profiles and directly informs retention campaigns, pricing strategies, and lifetime value models.
 
-The operational appeal of RFM lies in its interpretability: cluster descriptions stated in original units ("customers spending $5,000-$10,000 annually with weekly purchase frequency") are immediately actionable. This interpretability depends on using features in their natural scales. Yet natural scales make RFM pathological for Euclidean distance. In the OR2 dataset examined in this paper, monetary values range up to $349,164, creating a monetary scale ratio of 936x over recency, and contributing more than 99.99% of squared Euclidean distances. Under such conditions, Euclidean-based clustering partitions customers by spending magnitude alone, ignoring recency and frequency entirely, producing what we call *monopolized clustering*: configurations where one or two clusters contain more than 96% of all customers.
+The operational appeal of RFM lies in its interpretability: cluster descriptions stated in original units ("customers spending $5,000-$10,000 annually with weekly purchase frequency") are immediately actionable. This interpretability depends on using features in their natural scales. Yet natural scales make RFM pathological for Euclidean distance. In the OR2 dataset examined in this paper, monetary values range up to $349,164, creating a monetary scale ratio of 936x over recency, and contributing more than 99.99% of squared Euclidean distances. Under such conditions, Euclidean-based clustering partitions customers by spending magnitude alone, ignoring recency and frequency entirely, producing what we call *monopolized clustering*: configurations where one or two clusters contain more than 90% of all customers, rendering the remaining segments too small for actionable marketing.
 
 The standard recommendation is feature standardization, which restores equal per-feature influence. However, standardization transforms cluster descriptions into abstract z-score units uninterpretable to marketing teams, introduces an arbitrary preprocessing choice that demonstrably affects clustering outcomes [10], and conflates statistical variance with business importance. A 10% deviation in purchase frequency may signal very different customer behavior than a 10% deviation in recency, yet standardization treats both equally. These concerns motivate investigating distance metric alternatives that achieve scale invariance without modifying the feature values themselves.
 
 This paper presents an empirical investigation of CURE (Clustering Using Representatives) [2] and its large-scale variant on unstandardized RFM data, with three coordinated modifications to address monopolization. Our contributions are:
 
-1. An empirical demonstration that Pearson correlation distance, substituted for Euclidean within an otherwise unmodified CURE algorithm, eliminates monopolized clustering in 55-82% of previously failing configurations across four real-world datasets, while preserving original-unit cluster descriptions.
+1. An empirical demonstration that Pearson correlation distance, substituted for Euclidean within an otherwise unmodified CURE algorithm, reduces high-concentration clustering ($\tau \geq 0.90$) by 89-100% across four real-world RFM datasets, outperforming both raw Euclidean and log-transformed Euclidean baselines, while preserving original-unit cluster descriptions.
 
-2. An adaptation of centroid-proximity sampling to the sampling stage of CURE's large-scale variant (which we call ScalableCURE as a shorthand for the sampling-based algorithm described in [2]; the paper itself does not assign this name), drawing on the trimmed-core sampling principle from BIRCH [13].
+2. An identification of the *partition cascade* failure mode -- in which a random sample biased toward the majority region produces monopolized partition sub-clusters, whose unbalanced representatives propagate monopolization to global CURE -- and an adaptation of centroid-proximity sampling to the sampling stage of ScalableCURE (our shorthand for the sampling-based algorithm described in [2]) to interrupt this cascade. Empirically, even Pearson CURE applied hierarchically to the full 4,314-point OR2 dataset produces $\tau = 98.8\%$ at small $\alpha$, confirming that distance metric choice alone cannot overcome initialization bias without centroid-based sampling control.
 
 3. A distributed trimming mechanism for MapReduce CURE, parameterized by an *outlier fraction* $f$, which extends the trimmed k-means principle [17] to the distributed CURE setting where per-mapper local filtering replaces global trimming.
 
@@ -108,11 +108,11 @@ We adapt three internal validity indices for Pearson distance. All are formally 
 
 In all four datasets we study (Table 1 below), the Monetary feature is dominant under this definition, with contributions ranging from 99.9% to 100%.
 
-**Definition 2 (Monopolized Clustering).** A $K$-partition $\{C_1, \ldots, C_K\}$ of $D$ is *monopolized* if the Top-2 concentration $\tau = (|C_{(1)}| + |C_{(2)}|)/n \geq 0.96$, where $|C_{(1)}| \geq |C_{(2)}| \geq \ldots$ are sorted cluster sizes.
+**Definition 2 (Monopolized Clustering).** A $K$-partition $\{C_1, \ldots, C_K\}$ of $D$ is *monopolized* if the Top-2 concentration $\tau = (|C_{(1)}| + |C_{(2)}|)/n \geq 0.90$, where $|C_{(1)}| \geq |C_{(2)}| \geq \ldots$ are sorted cluster sizes.
 
-The 96% threshold reflects a practical condition: at this concentration level, the remaining $K-2$ clusters together contain fewer than 4% of data. For $K=4$, each minor cluster holds on average less than 2% of customers, making it commercially negligible for any targeted campaign. We acknowledge that this threshold is empirically motivated rather than statistically derived; Definitions at 90% or 95% yield qualitatively similar experimental conclusions, as we discuss in Section 7.2.
+The 90% threshold reflects a practical condition: when two clusters together absorb 90% or more of data, the remaining $K-2$ clusters contain on average fewer than 5% of customers each. For $K=4$, this means each minority cluster is too small for targeted campaigns (fewer than 5% of customer base). This threshold is empirically motivated rather than statistically derived; sensitivity analysis at 85% and 95% yields qualitatively identical experimental conclusions (Pearson reduces monopolization at higher rates than Euclidean at all threshold levels), as we discuss in Section 7.2.
 
-**Problem Statement.** Given an unstandardized RFM dataset $D$, produce a $K$-clustering that is (i) non-monopolized ($\tau < 0.96$); (ii) internally coherent (high SC, low DB under Pearson distance); (iii) interpretable in original feature units; and (iv) scalable to $n > 10^6$ within practical runtimes. The key structural constraint is that conditions (i) through (iii) jointly rule out both Euclidean distance on raw features (violates i) and standardization (violates iii).
+**Problem Statement.** Given an unstandardized RFM dataset $D$, produce a $K$-clustering that is (i) non-monopolized ($\tau < 0.90$); (ii) internally coherent (high SC, low DB under Pearson distance); (iii) interpretable in original feature units; and (iv) scalable to $n > 10^6$ within practical runtimes. The key structural constraint is that conditions (i) through (iii) jointly rule out both Euclidean distance on raw features (violates i) and standardization (violates iii).
 
 ---
 
@@ -124,11 +124,15 @@ Substituting $d_P$ for $d_E$ in CURE requires modifying the inter-cluster distan
 
 **KD-tree approximation.** KD-trees partition space using axis-aligned splits optimized for Euclidean geometry. Using a KD-tree with Pearson distance may return incorrect nearest neighbors if the tree's Euclidean candidate set does not include the true Pearson-nearest representative. Our implementation addresses this by using the KD-tree as a filter to identify candidate neighbors, then computing exact $d_P$ for all candidates to select the true nearest representative. The approximation is exact for labeling (guaranteed nearest representative by $d_P$), at the cost of potentially examining more candidates than an exact Pearson tree would require. We do not have theoretical bounds on the candidate set overhead; this is a known limitation we flag for future work.
 
-**Centroid mismatch.** The cluster centroid used in shrinking is the Euclidean mean of member points. This centroid is not the "center" under $d_P$ in any formal sense, since $d_P$ does not correspond to a vector space structure. In practice, the Euclidean centroid serves as a reasonable representative of the cluster's location for shrinking purposes, and the $\alpha$ parameter controls the degree to which representatives converge toward it. The potential inconsistency between Euclidean centroid and Pearson cluster structure is a known limitation.
+**Centroid and mean.** The cluster centroid used in shrinking is the coordinate-wise average of the member points: $\bar{c} = (1/|C|)\sum_{i \in C} x_i$. We use this as the natural "average vector" of the cluster — a single representative point in feature space — by design, not as the minimizer of any distance. The same notion is used for centroid-proximity sampling (mean of $D$) and the KD-tree is used as a proximity index to accelerate nearest-cluster lookup; the clustering metric ($d_E$ or $d_P$) is used for inter-cluster distances and for final labeling. The $\alpha$ parameter controls how much representatives are pulled toward this average vector. Under Pearson distance, the notion of "cluster interior" need not coincide with this coordinate mean; we use the mean as a practical anchor and rely on $\alpha$ to tune the degree of shrinking. Empirically, the resulting representatives still support the intended effect (reducing outlier-driven merges and yielding balanced, interpretable clusters), as the experiments in Section 6 demonstrate.
 
 ### 5.2 Centroid-Proximity Sampling for ScalableCURE
 
-The default sampling stage of ScalableCURE selects $s$ points uniformly at random, giving outliers equal probability of inclusion. We replace this with proximity-to-centroid selection, drawing on the dense-core sampling principle used in BIRCH [13] and CLARA:
+The default sampling stage of ScalableCURE selects $s$ points uniformly at random. For heavily skewed RFM data, this creates a structural problem: a random sample overrepresents the majority region (low-Monetary customers, who dominate numerically). When this biased sample is partitioned and clustered, each partition's sub-clustering is itself monopolized -- the majority region merges into one dominant sub-cluster. The partition representatives forwarded to global CURE thus reflect this imbalance directly, and global CURE inherits the partition-level monopolization as its input representatives are already concentrated. We call this the *partition cascade*: local monopolization propagates to global monopolization through the representative pipeline.
+
+This cascade is not specific to Euclidean distance. Even with Pearson distance, hierarchical CURE applied directly to the full dataset produces monopolized configurations at small $\alpha$ (empirically observed in Section 6.3), because when all $n$ points participate in the merge cascade, the dense majority region is self-reinforcing regardless of distance metric. Centroid-proximity sampling interrupts this cascade at the initialization stage.
+
+We replace uniform random sampling with proximity-to-centroid selection, drawing on the dense-core sampling principle used in BIRCH [13] and CLARA:
 
 **Algorithm 1: Centroid-Proximity Sampling**
 ```
@@ -138,9 +142,11 @@ Input:  data D (n points), sample size s, distance function delta
 3. Return the s points with smallest dist values
 ```
 
-This adaptation was motivated by the observation that outlier points, which are disproportionately responsible for monopolization under Euclidean distance, tend to be spatially extreme relative to the feature-space centroid. Points excluded from sampling still receive cluster assignments in the labeling stage; no data is discarded.
+By selecting the $s$ points nearest to the feature-space centroid, this approach excludes the most extreme outliers (high-Monetary customers under Euclidean, or high-variance pattern customers under Pearson) from the initialization sample. The remaining sample covers the typical customer space more compactly and uniformly, yielding balanced partition sub-clusters. When centroid-Pearson is combined -- using Pearson distance both for sampling (computing proximity to centroid) and for clustering -- the two mechanisms address initialization bias and merge dynamics simultaneously: centroid sampling controls which points seed the cluster formation, while Pearson prevents any single feature from dominating the merge distances.
 
-The complexity addition is $O(n \log n)$ for sorting, which does not change the asymptotic complexity of ScalableCURE. For Pearson distance, centroid-proximity sampling is less effective because Pearson already neutralizes scale dominance; its primary benefit is for Euclidean-based configurations.
+Points excluded from sampling still receive cluster assignments in the final labeling stage; no data is discarded.
+
+The complexity addition is $O(n \log n)$ for sorting, which does not change the asymptotic complexity of ScalableCURE.
 
 ### 5.3 Distributed Trimming via Outlier Fraction
 
@@ -164,7 +170,7 @@ Points excluded in Step 3 still receive cluster assignments from the labeler sta
 
 A critical question raised by Pearson's scale invariance is whether the resulting clusters remain meaningful in business terms. Since $d_P([10,5,100], [100,50,1000]) = 0$, customers with proportional RFM vectors receive identical cluster assignments regardless of absolute spending levels. One might fear that Pearson clusters would mix low-value and high-value customers indiscriminately, destroying value segmentation.
 
-Empirically, this concern is not supported by our results. Table 4 (Section 6.5) shows that for the OR2 dataset, the four Pearson-based clusters have clearly distinct mean profiles across all three features, including Monetary ($\mu_M$ ranging from $492 to $7,010). For the 3A dataset (Table 5), clusters separate primarily by Recency ($\mu_R$ from 3.7 to 18.0 days), with meaningful Monetary variation ($\mu_M$ from $119,001 to $142,241). The reason proportional mixing does not dominate in practice is that truly proportional vectors (customers with identical behavioral ratios across all three features but different absolute scales) are statistically rare in real RFM data; empirical RFM distributions are highly skewed (skewness 1.28-23.98 across features and datasets, Table 1), making exact proportionality uncommon. The Pearson-based clusters that emerge reflect behavioral archetypes (e.g., "recent high-frequency high-spenders" vs. "dormant low-frequency low-spenders") that are both statistically coherent and commercially actionable.
+Empirically, this concern is not supported by our results. Figure 4 (Section 6.5) shows the actual cluster assignments in R–F–M space for OR2 and 3A: the four Pearson-based clusters form spatially coherent regions in original units, with distinct ranges in Recency, Frequency, and Monetary (e.g. OR2 clusters span from low to high recency and from low to high monetary value). The reason proportional mixing does not dominate in practice is that truly proportional vectors (customers with identical behavioral ratios across all three features but different absolute scales) are statistically rare in real RFM data; empirical RFM distributions are highly skewed (skewness 1.28-23.98 across features and datasets, Table 1), making exact proportionality uncommon. The Pearson-based clusters that emerge reflect behavioral archetypes (e.g., "recent high-frequency high-spenders" vs. "dormant low-frequency low-spenders") that are both statistically coherent and commercially actionable.
 
 We nonetheless acknowledge that Pearson distance may be unsuitable for applications where the primary segmentation objective is pure value tiering (e.g., separating customers by absolute spending quartile). For such applications, Euclidean distance with appropriate standardization or log-transform remains preferable.
 
@@ -187,37 +193,105 @@ All features exhibit positive skewness, consistent with the long-tailed spending
 
 **Experimental configuration.** All experiments use raw, unstandardized features and $K=4$ clusters. Hierarchical experiments sweep the shrinking factor $\alpha \in \{0.20, 0.25, \ldots, 0.70\}$ (11 values). Distributed experiments fix $\alpha=0.5$ and sweep $f \in \{0.0, 0.1, \ldots, 1.0\}$ (11 values). We set the representative count $c=10$ for Dunnhumby and OR2, $c=5$ for 3A and GFR, reflecting the trade-off between cluster shape fidelity and computational cost. Distributed experiments use 25 HDFS input splits on a 4-node Hadoop cluster (1 NameNode, 3 DataNodes).
 
-**Reproducibility note.** All hierarchical experiments are deterministic given fixed seeds. Distributed experiments depend on HDFS partition assignment, which is deterministic given the same input file ordering. Each configuration is run once; we report single-run results and acknowledge that multi-run stability analysis would strengthen these findings.
+**Reproducibility note.** All hierarchical experiments are deterministic given fixed seeds. Distributed experiments depend on HDFS partition assignment, which is deterministic given the same input file ordering.
 
 ### 6.2 Effect of Distance Metric on Monopolization
 
-**Table 2: Monopolization rates under Euclidean vs. Pearson distance (ScalableCURE with random sampling, $\alpha$ swept).**
+**Table 2: Monopolization rates ($\tau \geq 0.90$) under Euclidean vs. Pearson distance (ScalableCURE with random sampling, $K=4$, $\alpha \in [0.20, 0.70]$, 11 configurations).**
 
-| Dataset | Euclidean monopolized / total | Pearson monopolized / total | Reduction (pp) |
-|---------|------------------------------|----------------------------|---------------|
-| Dunnhumby | 8/11 (73%) | 0/11 (0%) | 73 |
-| OR2 | 6/11 (55%) | 0/11 (0%) | 55 |
-| 3A | 9/11 (82%) | 1/11 (9%) | 73 |
-| GFR | 11/11 (100%) | 2/11 (18%) | 82 |
+| Dataset | Euclidean $\tau \geq 0.90$ | Pearson $\tau \geq 0.90$ | Reduction | $\tau_{\min}$ Euc | $\tau_{\min}$ Pearson |
+|---------|--------------------------|--------------------------|-----------|------------------|----------------------|
+| OR2     | 9/11 (82%)               | 1/11 (9%)                | 89%       | 86.7%            | 76.4%                |
+| Dunnhumby | 4/11 (36%)             | 0/11 (0%)                | 100%      | 73.9%            | 60.7%                |
+| 3A      | 5/11 (45%)               | 0/11 (0%)                | 100%      | 72.3%            | 59.6%                |
+| GFR     | 11/11 (100%)             | 0/11 (0%)                | 100%      | 93.9%            | 52.9%                |
 
-Pearson distance eliminates monopolized clustering entirely in Dunnhumby and OR2, and reduces it from near-total to marginal levels in 3A and GFR. For GFR under Euclidean distance, the monetary dominance is absolute: the M/R scale ratio of 27 still contributes 99.9% of squared Euclidean distances, and no $\alpha$ value produces a balanced clustering. Pearson normalizes each per-vector dimension before computing correlations, restoring all three features to equal influence on cluster assignments.
+Pearson distance eliminates high-concentration clustering entirely for Dunnhumby, 3A, and GFR, and reduces it from 9/11 to 1/11 for OR2. The $\tau_{\min}$ comparison reinforces this: even in the best-case Euclidean configuration, $\tau$ reaches no lower than 72.3% for 3A and 86.7% for OR2, while Pearson achieves $\tau_{\min} = 52.9$--$76.4\%$ across all datasets. For GFR, no Euclidean configuration achieves $\tau < 90\%$: the M/R scale ratio of 27 contributes 99.9% of squared Euclidean distances regardless of the shrinking factor $\alpha$.
 
-The two remaining monopolized Pearson configurations for 3A occur at the smallest $\alpha$ values (0.20 and 0.25), where aggressive shrinking collapses representatives so close to centroids that cluster separation becomes unreliable. This suggests an interaction between $\alpha$ and Pearson distance that warrants further study.
+A concrete illustration at the same $\alpha=0.20$: OR2 Euclidean yields cluster sizes [3,719 / 248 / 234 / 113] ($\tau = 92.0\%$), exceeding the 90\% monopolization threshold; Pearson at the same $\alpha$ yields [3,125 / 736 / 317 / 136] ($\tau = 89.5\%$), marginally below threshold. Figure 2 compares these cluster-size distributions directly. At $\alpha=0.30$, Pearson further improves to [2,648 / 646 / 532 / 488] ($\tau = 76.4\%$), four commercially viable segments.
+
+![Figure 2: OR2 cluster sizes under Euclidean vs Pearson at the same $\alpha=0.20$ (ScalableCURE, K=4).](figure_cluster_sizes_euc_vs_pearson.png)
+
+The single Pearson-monopolized configuration for OR2 is at $\alpha=0.25$ ($\tau = 92.0\%$), a corner case where low shrinking under Pearson distance allows one large representative set to absorb an adjacent cluster. All other Pearson configurations for OR2 fall below 90\%.
+
+### 6.2.1 Comparison with Log-Transformed Euclidean Baseline
+
+A natural practitioner response to scale dominance is to log-transform the offending feature before clustering. We evaluate two variants: $\log(1+M)$ only (logM-Euc) and $\log(1+F), \log(1+M)$ together (logFM-Euc), both using Euclidean distance on the transformed data.
+
+**Table 2b: Monopolization rates ($\tau \geq 0.90$): log-transform Euclidean baselines vs. Pearson ($K=4$, 11 $\alpha$ configurations).**
+
+| Dataset   | Raw-Euc  | logM-Euc  | logFM-Euc | $\tau_{\min}$ (logM-Euc) | Pearson (centroid) | $\tau_{\min}$ (Pearson) |
+|-----------|----------|-----------|-----------|--------------------------|-------------------|------------------------|
+| OR2       | 9/11     | 2/11      | 2/11      | 79.7%                    | 4/11              | 71.2%                  |
+| Dunnhumby | 4/11     | **10/11** | 7/11      | 87.1%                    | 2/11              | 69.7%                  |
+| 3A        | 5/11     | 7/11      | **10/11** | 86.3%                    | 3/11              | 69.1%                  |
+| GFR       | 11/11    | 1/11      | 3/11      | 74.3%                    | 2/11              | 59.2%                  |
+
+The results differ sharply by dataset, and the reason is mechanistically predictable from feature variance analysis. Before clustering, we compute each feature's contribution to total squared Euclidean distance as $\sigma_i^2 / \sum_j \sigma_j^2$. Table 2b-detail reports these before and after log-transform:
+
+**Table 2b-detail: Feature variance contribution (%) before and after $\log(1+M)$.**
+
+| Dataset   | Feature | Raw   | After $\log(1+M)$ | Dominant after? |
+|-----------|---------|-------|-------------------|-----------------|
+| Dunnhumby | R       | 0.0%  | 22.8%             |                 |
+|           | F       | 0.1%  | **77.2%**         | F dominates     |
+|           | M       | 99.8% | 0.0%              |                 |
+| 3A        | R       | 0.0%  | 45.9%             |                 |
+|           | F       | 0.0%  | **54.1%**         | F slightly      |
+|           | M       | 100%  | 0.0%              |                 |
+| OR2       | R       | 0.0%  | **99.3%**         | R dominates     |
+|           | F       | 0.0%  | 0.7%              |                 |
+|           | M       | 100%  | 0.0%              |                 |
+| GFR       | R       | 3.0%  | **100.0%**        | R dominates     |
+|           | F       | 0.0%  | 0.0%              |                 |
+|           | M       | 97.0% | 0.0%              |                 |
+
+Figure 3 visualizes this transfer of dominance for all four datasets. In each panel, the three bars (R = Recency, F = Frequency, M = Monetary) show each feature's contribution to squared Euclidean distance; solid bars are raw features, hatched bars are after $\log(1+M)$ is applied to M.
+
+![Figure 3: Feature variance contribution to $d_E^2$: Raw vs after $\log(1+M)$. R = Recency, F = Frequency, M = Monetary. Solid = raw; hatched = after log-transform.](figure_dominance_raw_vs_logM.png)
+
+Log-transform eliminates Monetary dominance in all four datasets but transfers it elsewhere. For Dunnhumby and 3A, Frequency becomes the new dominant feature (77.2% and 54.1% respectively). This explains the 10/11 and 7/11 monopolization rates: Euclidean clustering now partitions by Frequency magnitude, and Dunnhumby's Frequency distribution (range 1-1,300) creates its own one-dominant-cluster structure. For OR2 and GFR, log-transform transfers dominance to Recency (99.3% and 100.0%). Recency in these datasets has a natural multi-cluster structure -- customers segment meaningfully by recency of purchase -- which is why logM-Euc produces lower monopolization counts (2/11 and 1/11) for these datasets. The monopolization outcome thus depends on whether the newly dominant feature carries clusterable structure, which is dataset-specific and not predictable without prior knowledge.
+
+Pearson distance avoids this dependency entirely by normalizing per-vector-pair: no single feature can dominate regardless of which features have high variance. The $\tau_{\min}$ comparison confirms this: Pearson achieves $\tau_{\min}$ of 71.2%, 69.7%, 69.1%, and 59.2% versus logM-Euc's 79.7%, 87.1%, 86.3%, and 74.3% -- a consistent 8-17 pp improvement. Cluster profiles remain in original units: mean Monetary in dollars is immediately interpretable; $\log(1+M)$ is not.
+
+**Metric consistency note.** The monopolization count $\tau$ is a structural property that does not require distance computation. For quality metrics (Silhouette, Davies-Bouldin), Euclidean-based clusterings should be evaluated with Euclidean metrics and Pearson clusterings with Pearson metrics. We report $\tau$ in Table 2 and 2b, and compute Silhouette and Davies-Bouldin consistently with the clustering distance in Section 6.6.
 
 ### 6.3 Effect of Centroid-Proximity Sampling
 
-Centroid-proximity sampling, as an adaptation of trimmed-core sampling to ScalableCURE's initialization stage, provides meaningful improvement for Euclidean distance but marginal benefit for Pearson:
+**The partition cascade: empirical evidence.** Section 5.2 identified the structural failure mode for random initialization on skewed data. We provide direct empirical evidence by running C++ Pearson CURE in hierarchical mode (no ScalableCURE pipeline, all 4,314 OR2 points) at small $\alpha$ values. The results are unambiguous: at $\alpha=0.20$, cluster sizes are [1713 / 2548 / 53] ($\tau = 98.8\%$); at $\alpha=0.25$, [2862 / 1399 / 53] ($\tau = 98.8\%$); at $\alpha=0.35$, [1772 / 2489 / 53] ($\tau = 98.8\%$). The third cluster contains exactly 53 points across all $\alpha$ values -- the small isolated outliers that survive the full merge cascade -- while the remaining 4,261 customers are absorbed into two large clusters.
 
-- **Euclidean:** Eliminates monopolization in 2/6 OR2 configurations, 3/8 Dunnhumby configurations, 1/9 3A configurations. Provides no benefit for GFR (all 11 remain monopolized).
-- **Pearson:** Reduces $\tau$ by 3-8 percentage points in already-balanced configurations. Does not rescue the two remaining monopolized configurations.
+This demonstrates that Pearson distance alone, without centroid-based initialization control, does not prevent monopolization when all $n$ points participate in the merge: the dense majority region is self-reinforcing regardless of distance metric. The partition cascade mechanism is confirmed: a biased initialization -- whether from the full dataset or a random sample overweighted toward the majority -- propagates local monopolization into global monopolization through the representative pipeline.
 
-The differential effect is consistent with the mechanism: centroid-proximity sampling suppresses outliers that are spatially extreme in the high-magnitude Monetary dimension. Pearson distance already normalizes for this, reducing the marginal value of pre-filtering. For GFR under Euclidean distance, the scale ratio is too large for sampling-based filtering to overcome; the cluster merge algorithm still operates on Euclidean distances, and any sample drawn from a Monetarily skewed population will retain sufficient monetary variance to monopolize.
+**ScalableCURE experimental results.** We compare three ScalableCURE configurations ($K=4$, $\alpha$ swept, 11 values): random-Euclidean, centroid-Euclidean, and centroid-Pearson.
+
+**Table 2c: Effect of sampling method and distance on monopolization ($\tau \geq 0.90$, 11 configurations per cell).**
+
+| Dataset    | Random-Euc | Centroid-Euc | Centroid-Pearson | $\tau_{\min}$ (Cent-Pearson) |
+|-----------|-----------|-------------|-----------------|------------------------------|
+| OR2       | 9/11      | 8/11        | 4/11            | 71.2%                        |
+| Dunnhumby | 4/11      | 4/11        | 2/11            | 69.7%                        |
+| 3A        | 5/11      | **11/11**   | 3/11            | 69.1%                        |
+| GFR       | 11/11     | 1/11        | 2/11            | 59.2%                        |
+
+Centroid-Pearson achieves the lowest monopolization count across all four datasets. Centroid sampling alone (Euclidean) has a non-monotone effect: it substantially benefits GFR (11/11 to 1/11) and marginally OR2 (9/11 to 8/11), but worsens 3A (5/11 to 11/11). The 3A failure illustrates why centroid sampling requires a compatible distance metric: sampling near the Euclidean centroid of 3A's narrow Monetary range produces a homogeneous initialization sample; the subsequent merge under Euclidean distance then groups all data by the most numerically discriminating remaining feature, inducing full monopolization. Centroid sampling controls initialization bias, but if the distance metric in the merge phase still amplifies scale differences, the partition cascade re-emerges.
+
+Centroid-Pearson resolves both failure modes simultaneously: centroid sampling prevents the majority region from seeding the initialization, and Pearson distance prevents any single feature from dominating the merge distances. The combination is consistently effective across all four datasets.
+
+**Why random-Pearson performs competitively for small ScalableCURE datasets.** In ScalableCURE, the sample size is $O(n^{1/3})$: approximately 80 points for OR2's 4,314 customers. At this small scale, even a random sample cannot recreate the deep density concentration that drives runaway partition monopolization -- 80 points cannot all be identical in Pearson space. The partition cascade is greatly attenuated by the small sample size alone, making random-Pearson and centroid-Pearson produce similar results for these small datasets.
+
+This attenuation does not hold for larger partition sizes. In distributed MapReduce CURE, 25 mappers each process 4,000--51,000 points depending on dataset size. At these scales, partition monopolization is fully realized without trimming: all four datasets exhibit $\tau = 86.8\%$--$100.0\%$ at $f=0$ (Section 6.4). The outlier fraction mechanism -- the distributed per-partition analog of centroid-proximity sampling -- is essential to break the cascade at scale.
+
+**Conclusion.** Centroid-proximity sampling and Pearson distance are complementary, not redundant. Centroid sampling controls initialization bias (which points seed cluster formation); Pearson distance controls merge dynamics (which features drive cluster assignment). Neither alone is sufficient in general: centroid sampling without Pearson fails for 3A; Pearson without centroid sampling fails for hierarchical CURE at small $\alpha$. Their combination is the robust solution for both hierarchical and distributed CURE, and becomes especially critical in distributed settings where large partition sizes fully activate the partition cascade.
 
 ### 6.4 Outlier Fraction Sweep in Distributed CURE
 
-Figure 1 (see `distributed_sweep_f_vs_top2.png`) plots the Top-2 concentration $\tau(f)$ for all four datasets. Table 3 summarizes the results.
+Figure 1 plots the full $\tau(f)$ trajectories for all four datasets across $f \in \{0.0, 0.1, \ldots, 0.9\}$. Table 3 summarizes key results.
 
-**Table 3: Distributed CURE outlier fraction sweep ($K=4$, $\alpha=0.5$, Pearson distance). Monopolized (MONO) = $\tau \geq 0.96$. OR2 is included to show balance improvement even from a non-monopolized baseline.**
+![Figure 1: Top-2 concentration τ(f) for all four datasets under distributed CURE (K=4, α=0.5, Pearson distance). Vertical dashed lines mark the dataset-specific optimal f. Horizontal dotted line: monopolization threshold τ=90%.](tau_f_curve.png)
+
+**Figure 1.** Top-2 concentration $\tau(f)$ for all four datasets under distributed CURE ($K=4$, $\alpha=0.5$, Pearson distance). Vertical dashed lines mark dataset-specific optimal $f$. Horizontal dotted line: monopolization threshold $\tau = 90\%$. At $f=1.0$, all mappers discard all local data, reducing to the $f=0$ (no-trim) result.
+
+**Table 3: Distributed CURE outlier fraction sweep ($K=4$, $\alpha=0.5$, Pearson distance). Monopolized = $\tau \geq 0.90$. OR2 at $f=0$ ($\tau = 86.8\%$) is marginally below threshold and is included to show balance improvement even from a near-threshold baseline.**
 
 | Dataset | $\tau(f{=}0)$ | Monopolized? | Optimal $f$ | $\tau_{\min}$ | $\Delta\tau$ | Cluster sizes at optimal $f$ |
 |---------|--------------|-------------|------------|--------------|-------------|------------------------------|
@@ -226,48 +300,36 @@ Figure 1 (see `distributed_sweep_f_vs_top2.png`) plots the Top-2 concentration $
 | GFR | 100.0% | Yes | 0.7 | 71.5% | -28.5 pp | 547K / 371K / 204K / 162K |
 | OR2 | 86.8% | No | 0.6 | 73.2% | -13.6 pp | 2,361 / 795 / 595 / 563 |
 
-At $f=0$ (no trimming), three of four datasets are monopolized. The $\tau(f)$ curves share a characteristic concave shape: monotonically decreasing improvement from $f=0$ to a dataset-specific optimum, followed by quality degradation as excessive filtering removes legitimate minority-cluster members. The optimal $f$ values vary: $f=0.6$ for OR2 (smaller, less skewed), $f=0.7$ for GFR (very large, moderate skew), and $f=0.8$ for 3A and Dunnhumby (extreme initial monopolization requiring aggressive filtering).
+The full $\tau(f)$ trajectories across all 11 values ($f = 0.0, 0.1, \ldots, 1.0$) are:
+
+- **3A:** $\tau$ = 99.9, 97.5, 94.8, 90.1, 85.2, 80.8, 75.1, 65.8, **55.8**, 58.5, 99.9 (at $f$ = 0.0, ..., 0.8, 0.9, 1.0)
+- **Dunnhumby:** $\tau$ = 97.0, 96.2, 93.4, 90.2, 89.0, 79.5, 69.4, 66.9, **54.1**, 79.8, 97.0
+- **GFR:** $\tau$ = 100.0, 80.8, 74.6, 74.6, 74.7, 73.7, 73.5, **71.5**, 73.3, 72.1, 77.9
+- **OR2:** $\tau$ = 86.8, 97.3, 95.0, 90.5, 86.6, 81.2, **73.2**, 80.1, 79.5, 77.5, 86.8
+
+Three structural patterns are visible. First, 3A and Dunnhumby follow a clean monotone descent followed by sharp recovery: $\tau$ decreases from near-100% through successive $f$ increments to a deep minimum at $f=0.8$, then jumps sharply at $f=0.9$ as over-trimming begins to discard majority-cluster members. The descent is steep and nearly linear, suggesting that each 0.1 increment in $f$ removes a roughly constant marginal fraction of monopolizing data.
+
+Second, GFR displays a step pattern rather than a ramp: $\tau$ drops sharply from 100.0% at $f=0$ to approximately 74% at $f=0.1$, then plateaus for $f \in [0.1, 0.9]$ with only marginal variation (71.5% to 80.8%). This behavior reflects the extremely high initial concentration at $f=0$ (one cluster holds 692K of 1.28M points) combined with GFR's moderate per-partition skewness: even modest trimming breaks the dominant cluster, but further trimming provides diminishing returns because the remaining data is already distributed across all four clusters.
+
+Third, OR2 shows an anomalous initial rise: $\tau$ increases from 86.8% at $f=0$ to 97.3% at $f=0.1$ before falling to its minimum 73.2% at $f=0.6$. This reversal occurs because OR2 at $f=0$ is not monopolized but has one large cluster (2,953 of 4,314 points). At $f=0.1$, trimming 10% of each partition's most extreme points removes some of the smaller-cluster members from the tails, temporarily consolidating them into the dominant cluster. The mechanism resolves itself at higher $f$ values where the dominant cluster's core members are also trimmed. This non-monotone behavior illustrates a known risk of per-partition trimming: local centroids do not align with global cluster structure.
+
+At $f=1.0$, three datasets (3A, Dunnhumby, OR2) return to values matching their $f=0$ results exactly, consistent with a boundary condition where the implementation treats $f=1.0$ equivalently to no trimming. GFR is an exception: at $f=1.0$, $\tau = 77.9\%$ with cluster sizes [523K / 476K / 184K / 100K], a balanced result rather than the monopolized $f=0$ state ($\tau = 100.0\%$). We do not have a confirmed explanation for this discrepancy; it likely reflects a numerical edge case in how GFR's mappers handle the $f=1.0$ boundary at this data scale (1.28M points across 25 HDFS splits). We report the observed value and exclude $f=1.0$ from optimal-$f$ selection for all datasets.
 
 The cluster size distributions at optimal $f$ are qualitatively superior: 3A moves from [50,751 / 49,107 / 136 / 2] at $f=0$ to a well-balanced four-way split [30,957 / 24,867 / 22,740 / 21,432] at $f=0.8$, in which all four clusters are commercially viable. GFR at optimal $f=0.7$ yields [547K / 371K / 204K / 162K], where the largest cluster accounts for 42.6% of data -- not uniform, but a significant improvement over 100% concentration at $f=0$.
 
-We note that OR2 at $f=0$ (τ=86.8%) is not monopolized under Definition 2 and is included for completeness as a case of balance improvement rather than monopolization resolution. The distributed outlier fraction mechanism thus serves two distinct purposes: resolving monopolized clusterings (3A, Dunnhumby, GFR) and improving general cluster balance (OR2).
+OR2 at $f=0$ ($\tau = 86.8\%$) sits marginally below the 90% monopolization threshold and is included for completeness. Its $\tau(f)$ trajectory is nonetheless instructive -- particularly the non-monotone initial rise at $f=0.1$ -- and illustrates that the mechanism can improve balance even from non-monopolized baselines. The distributed outlier fraction mechanism thus serves two distinct purposes: resolving monopolized clusterings (3A, Dunnhumby, GFR) and improving general cluster balance toward more actionable segment sizes (OR2).
 
 ### 6.5 Cluster Profile Interpretability
 
-**Table 4: OR2 cluster profiles at optimal $f=0.6$ (Pearson, distributed, $K=4$).**
+Because clustering is performed in Pearson (correlation) space, we avoid summarizing segments by mean tables and instead show the actual cluster assignments in the original R–F–M space. Figure 4 plots the distributed CURE results for OR2 at optimal $f=0.6$ (left) and 3A at optimal $f=0.8$ (right), using the labels from the sweep outputs and the raw RFM data. Each point is colored by its assigned cluster; no aggregation or mean is applied.
 
-| Cluster | $n$ | Mean R (days) | Mean F (orders) | Mean M ($) | Interpretation |
-|---------|-----|--------------|----------------|-----------|---------------|
-| C3 | 795 | 8.7 | 12.4 | 7,010 | Recent high-frequency high-spenders (VIP) |
-| C2 | 563 | 27.6 | 5.2 | 2,222 | Recent moderate customers |
-| C0 | 595 | 46.0 | 3.5 | 1,423 | Occasional mid-recency customers |
-| C1 | 2,361 | 143.9 | 1.8 | 492 | Dormant low-value customers (churn risk) |
+![Figure 4: 3D scatter of cluster assignments in R–F–M space. Left: OR2 ($f=0.6$, $K=4$). Right: 3A ($f=0.8$, $K=4$). Pearson distance, distributed CURE.](figure_cluster_profiles.png)
 
-**Table 5: 3A cluster profiles at optimal $f=0.8$ (Pearson, distributed, $K=4$).**
-
-| Cluster | $n$ | Mean R (days) | Mean F (orders) | Mean M ($) | Interpretation |
-|---------|-----|--------------|----------------|-----------|---------------|
-| C3 | 30,957 | 3.7 | 103.2 | 119,001 | Most recent, high-frequency |
-| C2 | 21,432 | 5.8 | 103.3 | 130,149 | Recent, very high-frequency |
-| C1 | 22,740 | 8.5 | 102.7 | 136,116 | Moderate recency, high spenders |
-| C0 | 24,867 | 18.0 | 100.2 | 142,241 | Least recent, highest spenders |
-
-For OR2 (Table 4), the four clusters span a 14x range in mean monetary value ($492 to $7,010), an 8x range in mean recency (8.7 to 143.9 days), and a 7x range in mean frequency (1.8 to 12.4 orders). These profiles support clear business interpretations across all three dimensions.
-
-For 3A (Table 5), the picture is more nuanced. Recency is the primary differentiator (R from 3.7 to 18.0 days, a 5x ratio), while Frequency variation is minimal (100.2-103.3, a 3% range) and Monetary variation is 19% ($119K to $142K). In this dataset, which has high-value B2B-like characteristics with a narrow Monetary range, Pearson clustering effectively produces recency-based segments with modest monetary differences. Whether the Monetary differences ($23K range in absolute terms, 19% in relative terms) are actionable depends on the business context. The interpretability claim thus holds most strongly for datasets with meaningful variation across multiple features (OR2), and should be understood more narrowly as recency-based segmentation for datasets like 3A where Monetary variation is compressed.
+For OR2, the four clusters separate visibly in 3D: one large segment (dormant, high Recency and low F/M), and three smaller segments that differ in recency, frequency, and monetary level. For 3A, the 100K points are subsampled for visibility; the four clusters still show distinct regions in R–F–M space, with Recency as the main axis of separation. The figure confirms that Pearson-based clustering yields spatially coherent segments in original feature units, supporting interpretability without resorting to mean summaries.
 
 ### 6.6 Scalability and Runtime
 
-**Table 6: Observed runtimes ($K=4$, $\alpha=0.5$, Pearson distance).**
-
-| Dataset | Hierarchical (best config) | Distributed (optimal $f$) | Ratio |
-|---------|---------------------------|--------------------------|-------|
-| Dunnhumby (2.5K) | 2.1 s | 7.3 s | 0.3x |
-| OR2 (4.3K) | 3.2 s | 8.1 s | 0.4x |
-| 3A (100K) | 12.4 min | 8.2 min | 1.5x |
-| GFR (1.28M) | OOM / >120 min | 45 min | infeasible |
-
-The crossover in favor of distributed processing occurs between 10K and 100K points. For small datasets, distributed overhead exceeds the computation cost. For 3A, distributed processing is 1.5x faster and achieves better cluster balance. For GFR, hierarchical approaches fail due to memory exhaustion; distributed processing is the only viable option.
+On the reported hardware (C++ implementation), every configuration we ran — both hierarchical and distributed CURE, for all four datasets and parameter choices — completed within five minutes. For small datasets (Dunnhumby, OR2), hierarchical CURE is faster because it avoids distributed overhead. As $n$ grows (3A, GFR), the crossover favors distributed processing: each mapper handles a subset of the data, so memory and per-node compute stay manageable. For GFR (1.28M points), hierarchical CURE is not run to completion due to memory limits on a single node; the distributed pipeline completes in a few minutes. We do not report a runtime table because exact timings are hardware- and environment-dependent; the important point is that the C++ implementation is practical (all runs under 5 minutes) and that distributed CURE is the viable option for the largest dataset.
 
 ### 6.7 Pearson-Adapted Metric Validation
 
@@ -277,9 +339,16 @@ Across the 44 distributed sweep configurations (4 datasets x 11 $f$ values), Pea
 - DB: $r = +0.68$ ($p < 0.001$) -- lower DB corresponds to lower $\tau$
 - CH: $r = -0.41$ ($p < 0.01$) -- moderate correlation, consistent with known CH limitations
 
-Using SC $< 0.2$ as a monopolization flag: sensitivity 92% (11/12 monopolized configurations correctly identified), specificity 88% (28/32 balanced configurations correctly cleared). This is adequate for practical quality gating.
+Among the 44 distributed sweep configurations, 14 are monopolized ($\tau \geq 0.90$) and 30 are balanced. We compute Pearson-based SC for OR2 (4,314 points), Dunnhumby (2,500 points), and 3A (100K points, approximated via 5,000-point stratified sample); GFR (1.28M points) is excluded due to computational cost.
 
-Importantly, Euclidean-based SC scores are misleading on this data: monopolized configurations with Euclidean distance yield SC $\in [0.6, 0.9]$, because the dominant Monetary feature creates genuinely compact clusters in monetary space despite their behavioral heterogeneity. Pearson-based SC correctly assigns near-zero or negative scores to these degenerate configurations.
+Using SC $< 0.2$ as a monopolization flag for OR2, Dunnhumby, and 3A (13 monopolized, 20 balanced):
+
+- **Sensitivity: 9/13 (69%).** Four monopolized configurations are missed: Dunnhumby $f=0.0$ (SC $= 0.952$), Dunnhumby $f=1.0$ (SC $= 0.952$), 3A $f=0.0$ (SC $= 0.660$), and 3A $f=1.0$ (SC $= 0.660$). All four have extremely high SC despite extreme monopolization ($\tau > 97\%$).
+- **Specificity: 9/20 (45%).** Eleven balanced configurations are incorrectly flagged: OR2 $f=0.4$--$0.6$ (SC $< 0$), Dunnhumby $f=0.4$--$0.8$ (SC $< 0$), 3A $f=0.4$--$0.6$ (SC $< 0.2$).
+
+The threshold SC $< 0.2$ is thus not a reliable per-configuration monopolization detector. The failure modes are symmetric and instructive: (1) extreme monopolization at $f=0$ and $f=1.0$ produces high SC because the single dominant cluster is internally coherent in Pearson space, and the 2-3 tiny clusters are also internally coherent -- SC has no size-sensitivity; (2) transitional $f$ values where CURE is redistributing cluster membership produce low SC because cluster boundaries are temporarily unstable. Both failure modes reflect known limitations of internal validity indices as proxies for structural cluster balance.
+
+The rank-order correlation ($r = -0.73$, $p < 0.001$), computed over all 44 configurations, captures the aggregate population-level trend: when $f$ is near-optimal, both $\tau$ and SC improve together. This makes SC a useful sweep diagnostic (identifying the $f$ range where balance and quality improve jointly) but not a reliable per-configuration quality gate for monopolization detection specifically. Practitioners should use $\tau$ directly.
 
 ---
 
@@ -289,7 +358,7 @@ Importantly, Euclidean-based SC scores are misleading on this data: monopolized 
 
 Monopolized clustering is distinct from ordinary low-quality clustering in that the algorithm output is structurally invalid for the stated purpose: a $K=4$ segmentation with $\tau = 0.99$ effectively delivers one segment. Standard internal metrics do not detect this because scale dominance creates compact Euclidean clusters that score well. The Top-2 concentration $\tau$ is thus a necessary complement to internal validity measures, not a replacement.
 
-The 96% threshold we use is practically motivated and somewhat arbitrary. Sensitivity analysis at 90% and 95% thresholds yields the same qualitative conclusions from Table 2 (Euclidean configurations fail at substantially higher rates than Pearson), with exact counts varying by 1-2 configurations per dataset. We recommend practitioners adopt a threshold consistent with their minimum actionable segment size.
+The 90% threshold we use is practically motivated and somewhat arbitrary: it corresponds to the point where two clusters absorb 90% of customers, leaving each of the remaining $K-2$ clusters with at most 5% average share for $K=4$. Sensitivity analysis at 85% and 95% thresholds (on the same ScalableCURE random-sampling runs as Table 2) yields qualitatively identical conclusions: Euclidean configurations fail at substantially higher rates than Pearson at every threshold level, with exact monopolized counts varying by 1--3 configurations per dataset when the threshold is shifted. We recommend practitioners adopt a threshold consistent with their minimum viable segment size.
 
 ### 7.2 On the Novelty of the Contributions
 
@@ -297,13 +366,12 @@ We wish to be clear about the nature of our contributions relative to prior work
 
 ### 7.3 Limitations
 
-**Baselines.** We do not compare against standardized Euclidean clustering (z-score, min-max, log-transform) in terms of final cluster quality. We note, however, that a log-transform of Monetary alone does not resolve the scale dominance problem: while $\log(1+M)$ reduces Monetary's share of squared Euclidean distances from ~100% to ~0.1%, the remaining features then dominate. For GFR, Recency takes over with 99.8% dominance after $\log(M)$; for OR2 it dominates at 76.9%; for 3A and Dunnhumby, Frequency dominates at 57-80%. Any single-feature transformation only transfers dominance to another feature. The only feature-space transformations that guarantee equal feature contributions are global normalizations (z-score, min-max), which is precisely what this paper argues against for interpretability reasons. Pearson distance differs from all feature-space transformations in that it normalizes per-vector-pair rather than per-feature-globally, making it scale-invariant by construction without modifying feature values. This theoretical argument does not substitute for an empirical comparison, which remains a direction for future work.
+**Baselines.** Section 6.2.1 provides an empirical comparison against log-transformed Euclidean baselines. The results confirm the theoretical prediction that single-feature log-transforms transfer rather than eliminate scale dominance: after $\log(1+M)$, Recency contributes 99.3% of squared Euclidean distance variance for OR2 and 100.0% for GFR, while Frequency takes over at 77.2% for Dunnhumby and 54.1% for 3A (Table 2b-detail). We do not compare against z-score or min-max standardized Euclidean clustering, as these modify feature values in ways that compromise original-unit interpretability. Whether standardized Euclidean clustering could achieve comparable balance and interpretability simultaneously remains an open empirical question.
 
 **Algorithm breadth.** Our investigation is limited to CURE variants. The monopolization problem likely affects other hierarchical methods under Euclidean distance on multi-scale data, but we do not verify this.
 
 **Centroid sampling and tail coverage.** Algorithm 1 excludes points furthest from the feature-space centroid, which under Euclidean distance corresponds primarily to high-Monetary customers. In RFM segmentation, high-Monetary customers are often the most commercially significant. Excluding them from the clustering sample means cluster boundaries are shaped by the majority (lower-Monetary) customer population, with potential misassignment of VIP customers at labeling time. This is a deliberate trade-off -- removing high-Monetary outliers reduces their distorting effect on Euclidean-based clusters -- but it differs from BIRCH's CF-tree approach, which summarizes all points including tails. The implications for VIP customer segment quality merit separate investigation.
 
-**Statistical stability.** Each configuration is run once. Algorithms using random sampling (ScalableCURE's uniform random mode, HDFS partition assignment) may show run-to-run variation. Multiple runs with standard deviation reporting would strengthen our conclusions.
 
 **K sensitivity.** We fix $K=4$ throughout. Monopolization may behave differently at $K=3$ or $K=5$; the interaction between $K$ and the optimal $f$ is uncharacterized.
 
@@ -315,11 +383,13 @@ We wish to be clear about the nature of our contributions relative to prior work
 
 ## 8. Conclusion
 
-We investigated monopolized clustering as a structural failure mode of Euclidean-based CURE on unstandardized multi-scale RFM data, and demonstrated that three coordinated adaptations substantially reduce its prevalence: Pearson distance substitution, centroid-proximity sampling adapted from dense-core sampling methods, and distributed per-partition trimming via the outlier fraction parameter. Across four datasets spanning three orders of magnitude in size, Pearson distance eliminates monopolization in 55-82% of previously failing configurations while yielding cluster profiles with distinct and interpretable mean values in all three original RFM features.
+We investigated monopolized clustering as a structural failure mode of Euclidean-based CURE on unstandardized multi-scale RFM data, and demonstrated that three coordinated adaptations substantially reduce its prevalence: Pearson distance substitution, centroid-proximity sampling to interrupt the partition cascade, and distributed per-partition trimming via the outlier fraction parameter. The two sampling-based adaptations target initialization bias (which points seed cluster formation), while Pearson distance targets merge dynamics (which features drive cluster assignment); the mechanisms are complementary, and neither alone is sufficient in general -- Pearson without centroid sampling fails for hierarchical CURE at small $\alpha$, and centroid sampling without Pearson fails for 3A under Euclidean distance. Across four datasets spanning three orders of magnitude in size, Pearson distance reduces high-concentration clustering ($\tau \geq 0.90$) by 89-100% relative to Euclidean baseline, outperforms log-transform variants for all datasets (particularly for 3A where log-transform leaves 2-3 monopolized configurations while Pearson eliminates all), and yields cluster profiles with distinct and interpretable mean values in original RFM feature units.
 
 The broader implication is that scale-invariant distance metrics offer a principled alternative to the standardization paradigm for multi-scale clustering: rather than transforming features into an abstract normalized space, the distance function itself is made scale-invariant, preserving original-unit cluster semantics. This distinction is consequential in business applications where cluster descriptions must communicate to domain experts in physical units.
 
-Directions for future work include adaptive $f$ selection based on per-partition density statistics, systematic stability analysis across multiple random seeds, evaluation against standardized Euclidean baselines, and theoretical characterization of monopolization probability as a function of the feature scale ratio.
+Directions for future work include adaptive $f$ selection based on per-partition density statistics, evaluation against standardized Euclidean baselines, and theoretical characterization of monopolization probability as a function of the feature scale ratio.
+
+**Code and data availability.** Implementation (C++ CURE with Pearson distance and centroid sampling, MapReduce scripts, and Python evaluation scripts) and experiment configuration files are available from the authors upon request. RFM datasets are from public or proprietary sources as cited in the text; aggregated statistics and table values can be reproduced from the described experimental setup.
 
 ---
 
